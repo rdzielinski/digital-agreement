@@ -175,9 +175,6 @@ function App() {
     }
   };
 
-  /**
-   * A modal for capturing signatures that dynamically resizes the canvas.
-   */
   const SignaturePadModal = ({ signer, isOpen, onClose, onSave, sigPadRef }) => {
     const containerRef = useRef(null);
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -191,7 +188,6 @@ function App() {
           });
         }
       };
-
       updateDimensions();
       window.addEventListener('resize', updateDimensions);
       return () => window.removeEventListener('resize', updateDimensions);
@@ -226,16 +222,74 @@ function App() {
     );
   };
 
-  /**
-   * The admin panel for viewing and managing submitted agreements.
-   */
   const AdminPanel = () => {
-    // ... (AdminPanel code remains the same)
+    const agreementsWithoutInstruments = agreements.filter(a => !a.instrument);
+    const completedAgreements = agreements.filter(a => a.instrument);
+
     return (
-      // ...
+      <div className="mt-8">
+        <h3 className="text-2xl font-bold text-gray-800 mb-4 text-center">Admin Panel</h3>
+        <p className="text-center text-gray-600 mb-6">Click on a pending form to assign an instrument.</p>
+        {selectedAgreement ? (
+          <div className="p-6 bg-gray-100 rounded-xl shadow-inner">
+            <h4 className="text-xl font-semibold mb-4">Assign Instrument for {selectedAgreement.studentName}</h4>
+            <div className="space-y-4">
+              <div><p><strong>Student:</strong> {selectedAgreement.studentName}</p></div>
+              <div><p><strong>Parent:</strong> {selectedAgreement.parentName}</p></div>
+            </div>
+            <form onSubmit={handleAdminFormSubmit} className="space-y-4 mt-6">
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1" htmlFor="assignedInstrument">Instrument Type</label>
+                <input id="assignedInstrument" type="text" value={assignedInstrument} onChange={(e) => setAssignedInstrument(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg" required />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1" htmlFor="assignedBrand">Brand and Serial #</label>
+                <input id="assignedBrand" type="text" value={assignedBrand} onChange={(e) => setAssignedBrand(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg" required />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1" htmlFor="assignedDefects">Conditions/Defects</label>
+                <textarea id="assignedDefects" value={assignedDefects} onChange={(e) => setAssignedDefects(e.target.value)} rows="3" className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+              </div>
+              <div className="flex justify-end space-x-2 mt-4">
+                <button type="button" onClick={() => setSelectedAgreement(null)} className="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg">Save & Assign</button>
+              </div>
+            </form>
+          </div>
+        ) : (
+          <>
+            <h4 className="text-xl font-bold text-gray-800 mt-8 mb-4">Pending Agreements</h4>
+            {agreementsWithoutInstruments.length > 0 ? (
+              <ul className="space-y-4">
+                {agreementsWithoutInstruments.map((agreement) => (
+                  <li key={agreement.id} onClick={() => setSelectedAgreement(agreement)} className="bg-gray-50 p-6 rounded-xl shadow-sm cursor-pointer hover:bg-gray-100">
+                    <p className="font-bold">{agreement.studentName}</p>
+                    <p>Parent: {agreement.parentName}</p>
+                    {agreement.timestamp && <p className="text-sm text-gray-400 mt-2">Submitted: {new Date(agreement.timestamp.toDate()).toLocaleString()}</p>}
+                  </li>
+                ))}
+              </ul>
+            ) : (<p className="text-center text-gray-500">No pending agreements.</p>)}
+            <h4 className="text-xl font-bold text-gray-800 mt-8 mb-4">Completed Agreements</h4>
+            {completedAgreements.length > 0 ? (
+              <ul className="space-y-4">
+                {completedAgreements.map((agreement) => (
+                  <li key={agreement.id} className="bg-gray-50 p-6 rounded-xl shadow-sm">
+                    <p className="font-bold">{agreement.studentName}</p>
+                    <p>Instrument: {agreement.instrument}</p>
+                    <p>Serial #: {agreement.brand}</p>
+                    <p>Parent: {agreement.parentName}</p>
+                    {agreement.timestamp && <p className="text-sm text-gray-400 mt-2">Submitted: {new Date(agreement.timestamp.toDate()).toLocaleString()}</p>}
+                  </li>
+                ))}
+              </ul>
+            ) : (<p className="text-center text-gray-500">No completed agreements.</p>)}
+          </>
+        )}
+      </div>
     );
   };
-  
+
   if (!isAuthReady) {
     return <div className="text-center p-10">Loading and authenticating...</div>;
   }
