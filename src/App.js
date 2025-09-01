@@ -289,7 +289,7 @@ function App() {
       </div>
     );
   };
-
+  
   if (!isAuthReady) {
     return <div className="text-center p-10">Loading and authenticating...</div>;
   }
