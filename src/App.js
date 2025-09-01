@@ -21,8 +21,7 @@ const firebaseConfig = {
 // Please consider using Firebase Custom Claims in the future.
 const ADMIN_UID = 'Lmnop123!@12'; // Replace with your actual admin user ID
 
-const __initial_auth_token = typeof window !== 'undefined' && window.__initial_auth_token || null;
-
+const __initial_auth_token = (typeof window !== 'undefined' && window.__initial_auth_token) || null;
 /**
  * Main application component for the Digital Instrument Rental Agreement.
  * Manages form state, handles submission, and provides an admin interface.
