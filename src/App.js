@@ -22,6 +22,7 @@ const firebaseConfig = {
 const ADMIN_UID = 'Lmnop123!@12'; // Replace with your actual admin user ID
 
 const __initial_auth_token = (typeof window !== 'undefined' && window.__initial_auth_token) || null;
+
 /**
  * Main application component for the Digital Instrument Rental Agreement.
  * Manages form state, handles submission, and provides an admin interface.
@@ -229,11 +230,11 @@ function App() {
       <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
         <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
           <h2 className="text-xl font-bold mb-4">Sign as {signer === 'parent' ? 'Parent/Guardian' : 'Student'}</h2>
-          <div className="border-2 border-dashed border-gray-400 rounded-lg">
+          <div className="h-40 border-2 border-dashed border-gray-400 rounded-lg">
             <SignatureCanvas
               ref={sigPadRef}
               penColor="black"
-              canvasProps={{ className: 'w-full h-40' }}
+              canvasProps={{ className: 'w-full h-full' }}
             />
           </div>
           <div className="flex justify-end space-x-2 mt-4">
