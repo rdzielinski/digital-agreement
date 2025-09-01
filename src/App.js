@@ -1,247 +1,427 @@
-import React, { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, addDoc, onSnapshot, query, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import SignatureCanvas from 'react-signature-canvas';
 
-const App = () => {
-  const [formData, setFormData] = useState({
-    studentName: '',
-    parentName: '',
-    address: '',
-    phoneNumber: '',
-    instrument: '',
-    accessories: '',
-    brandSerial: '',
-    instrumentCondition: '',
-    parentSignature: '',
-    studentSignature: '',
-  });
+// --- Firebase Project Configuration ---
+// It's recommended to store these in environment variables for production
+const firebaseConfig = {
+  apiKey: "AIzaSyCvqrLvTnFb_rCeuAMGUpd55CJ8_qwTBVg",
+  authDomain: "digital-form-e13d7.firebaseapp.com",
+  projectId: "digital-form-e13d7",
+  storageBucket: "digital-form-e13d7.firebasestorage.app",
+  messagingSenderId: "787464716516",
+  appId: "1:787464716516:web:7450b9c33204e69ea22cf1",
+  measurementId: "G-HE3VF8RKD9"
+};
 
+// --- Admin User ID ---
+// !!! SECURITY WARNING !!!
+// Hardcoding the Admin UID here is NOT secure for a production application.
+// Anyone can view this in the browser's source code.
+// For production, use Firebase Custom Claims or a secure backend check to determine admin status.
+const ADMIN_UID = 'Lmnop123!@12'; // Replace with your actual admin user ID
+
+const __initial_auth_token = typeof window !== 'undefined' && window.__initial_auth_token || null;
+
+/**
+ * Main application component for the Digital Instrument Rental Agreement.
+ * Manages form state, handles submission, and provides an admin interface.
+ */
+function App() {
+  // Form state for students/parents
+  const [studentName, setStudentName] = useState('');
+  const [parentName, setParentName] = useState('');
+  const [address, setAddress] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [parentSignature, setParentSignature] = useState(null);
+  const [studentSignature, setStudentSignature] = useState(null);
+  const [isParentSigning, setIsParentSigning] = useState(false);
+  const [isStudentSigning, setIsStudentSigning] = useState(false);
+  const [errors, setErrors] = useState({});
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prevData) => ({
-      ...prevData,
-      [name]: value,
-    }));
-  };
+  // State for admin view
+  const [agreements, setAgreements] = useState([]);
+  const [selectedAgreement, setSelectedAgreement] = useState(null);
+  const [assignedInstrument, setAssignedInstrument] = useState('');
+  const [assignedBrand, setAssignedBrand] = useState('');
+  const [assignedDefects, setAssignedDefects] = useState('');
 
-  const handleSubmit = (e) => {
+  // State for Firebase and user session
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [userId, setUserId] = useState(null);
+  const db = useRef(null);
+  const auth = useRef(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Refs for signature pads
+  const parentSigPad = useRef({});
+  const studentSigPad = useRef({});
+
+  /**
+   * Initializes Firebase and sets up authentication.
+   */
+  useEffect(() => {
+    try {
+      if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+        const app = initializeApp(firebaseConfig);
+        db.current = getFirestore(app);
+        auth.current = getAuth(app);
+
+        const signIn = async () => {
+          if (__initial_auth_token) {
+            await signInWithCustomToken(auth.current, __initial_auth_token);
+          } else {
+            await signInAnonymously(auth.current);
+          }
+          const currentUserId = auth.current.currentUser?.uid;
+          setUserId(currentUserId);
+          // Check if the current user is the admin
+          if (currentUserId === ADMIN_UID) {
+            setIsAdmin(true);
+          }
+          setIsAuthReady(true);
+        };
+        signIn();
+      } else {
+        console.error('Firebase configuration is missing.');
+      }
+    } catch (error) {
+      console.error('Failed to initialize Firebase:', error);
+    }
+  }, []);
+
+  /**
+   * Listens for real-time updates to the 'agreements' collection for the admin.
+   */
+  useEffect(() => {
+    if (!isAuthReady || !db.current || !isAdmin) {
+      setAgreements([]);
+      return;
+    }
+
+    try {
+      // Admin listens to the top-level 'agreements' collection for all submissions
+      const agreementsRef = collection(db.current, 'agreements');
+      const q = query(agreementsRef);
+
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const agreementsList = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setAgreements(agreementsList);
+      });
+      return () => unsubscribe();
+    } catch (error) {
+      console.error('Error fetching agreements from Firestore:', error);
+    }
+  }, [isAuthReady, isAdmin]);
+
+  /**
+   * Handles form submission for the student/parent view.
+   * Saves to a central Firestore collection.
+   */
+  const handleStudentFormSubmit = async (e) => {
     e.preventDefault();
-    setIsSubmitted(true);
-    // In a real application, you would send this data to a server
-    // or generate a PDF here. For this example, we just display it.
-    console.log('Form Submitted:', formData);
-    // Optionally, you can trigger a print dialog here
-    // window.print();
+    const newErrors = {};
+    if (!studentName) newErrors.studentName = 'Student Name is required.';
+    if (!parentName) newErrors.parentName = 'Parent/Guardian Name is required.';
+    if (!address) newErrors.address = 'Address is required.';
+    if (!phoneNumber) newErrors.phoneNumber = 'Phone Number is required.';
+    if (!parentSignature) newErrors.parentSignature = 'Parent/Guardian signature is required.';
+    if (!studentSignature) newErrors.studentSignature = 'Student signature is required.';
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+    setErrors({});
+
+    if (db.current) {
+      try {
+        // CORRECTED: Write to a single, top-level 'agreements' collection
+        const agreementsRef = collection(db.current, 'agreements');
+        await addDoc(agreementsRef, {
+          studentName,
+          parentName,
+          address,
+          phoneNumber,
+          loanDate: new Date().toISOString().slice(0, 10),
+          parentSignature,
+          studentSignature,
+          instrument: null,
+          brand: null,
+          defects: null,
+          submittedBy: userId, // Keep track of who submitted it
+          timestamp: serverTimestamp()
+        });
+        console.log('Document successfully written to Firestore!');
+        setIsSubmitted(true);
+      } catch (error) {
+        console.error('Error writing document to Firestore:', error);
+      }
+    }
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-100 to-indigo-200 p-4 sm:p-6 lg:p-8 font-sans">
-      <div className="max-w-4xl mx-auto bg-white shadow-xl rounded-2xl p-6 sm:p-8 lg:p-10 border border-blue-200">
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-center text-blue-800 mb-6 sm:mb-8">
-          Waterloo School District Instrument Rental Agreement
-        </h1>
+  /**
+   * Handles form submission for the admin view to update an agreement.
+   */
+  const handleAdminFormSubmit = async (e) => {
+    e.preventDefault();
+    if (selectedAgreement && db.current) {
+      try {
+        // CORRECTED: Update the document in the top-level 'agreements' collection
+        const agreementRef = doc(db.current, 'agreements', selectedAgreement.id);
+        await updateDoc(agreementRef, {
+          instrument: assignedInstrument,
+          brand: assignedBrand,
+          defects: assignedDefects,
+        });
+        console.log('Document successfully updated!');
+        setSelectedAgreement(null);
+        setAssignedInstrument('');
+        setAssignedBrand('');
+        setAssignedDefects('');
+      } catch (error) {
+        console.error('Error updating document:', error);
+      }
+    }
+  };
+  
+  // Resets the student form
+  const handleNewForm = () => {
+    setStudentName('');
+    setParentName('');
+    setAddress('');
+    setPhoneNumber('');
+    setParentSignature(null);
+    setStudentSignature(null);
+    setIsSubmitted(false);
+  };
+  
+  // Opens the signature modal
+  const openSignaturePad = (signer) => {
+    if (signer === 'parent') setIsParentSigning(true);
+    else setIsStudentSigning(true);
+  };
+  
+  // Saves the signature data
+  const saveSignature = (signer) => {
+    if (signer === 'parent') {
+      setParentSignature(parentSigPad.current.getTrimmedCanvas().toDataURL('image/png'));
+      setIsParentSigning(false);
+    } else {
+      setStudentSignature(studentSigPad.current.getTrimmedCanvas().toDataURL('image/png'));
+      setIsStudentSigning(false);
+    }
+  };
 
-        {isSubmitted ? (
-          <div className="text-center p-8 bg-green-50 text-green-800 rounded-lg shadow-inner">
-            <h2 className="text-2xl font-semibold mb-4">Agreement Submitted Successfully!</h2>
-            <p className="text-lg">Thank you for completing the rental agreement.</p>
-            <p className="mt-4 text-sm text-gray-600">
-              (In a real application, this would typically be saved or sent to the school.)
-            </p>
-            <button
-              onClick={() => window.print()}
-              className="mt-6 px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-300 transform hover:scale-105"
-            >
-              Print This Page
+  /**
+   * A modal for capturing signatures.
+   */
+  const SignaturePadModal = ({ signer, isOpen, onClose, onSave, sigPadRef }) => {
+    if (!isOpen) return null;
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
+        <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
+          <h2 className="text-xl font-bold mb-4">Sign as {signer === 'parent' ? 'Parent/Guardian' : 'Student'}</h2>
+          <div className="border-2 border-dashed border-gray-400 rounded-lg">
+            <SignatureCanvas
+              ref={sigPadRef}
+              penColor="black"
+              canvasProps={{ className: 'w-full h-40' }}
+            />
+          </div>
+          <div className="flex justify-end space-x-2 mt-4">
+            <button onClick={() => {if(signer === 'parent') {parentSigPad.current.clear()} else {studentSigPad.current.clear()}}} className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors">
+              Clear
             </button>
-            <button
-              onClick={() => setIsSubmitted(false)}
-              className="mt-6 ml-4 px-6 py-3 bg-gray-300 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-400 transition duration-300 transform hover:scale-105"
-            >
-              Edit Again
+            <button onClick={onClose} className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors">
+              Cancel
+            </button>
+            <button onClick={() => onSave(signer)} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+              Save Signature
             </button>
           </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <section className="bg-blue-50 p-5 rounded-xl border border-blue-100 shadow-sm">
-              <h2 className="text-2xl font-bold text-blue-700 mb-4 border-b pb-2 border-blue-200">Rental Fee & Security</h2>
-              <p className="text-gray-700 mb-3">
-                The annual instrument rental/use fee is <strong className="text-blue-800">$50.00</strong> for the entire school year.
-                Please make checks payable to the <strong className="text-blue-800">Waterloo School District</strong>. The rental fee
-                must be paid before your child can receive a school instrument.
-              </p>
-              <p className="text-gray-700">
-                Master Locks are available to borrow for band locker storage. If students choose not to use a lock,
-                the school district is not responsible for any lost or stolen items.
-              </p>
-            </section>
+        </div>
+      </div>
+    );
+  };
 
-            <section className="bg-gray-50 p-5 rounded-xl border border-gray-100 shadow-sm">
-              <h2 className="text-2xl font-bold text-gray-800 mb-4 border-b pb-2 border-gray-200">Student & Parent/Guardian Information</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="col-span-1">
-                  <label htmlFor="studentName" className="block text-sm font-medium text-gray-700 mb-1">Student Name:</label>
-                  <input
-                    type="text"
-                    id="studentName"
-                    name="studentName"
-                    value={formData.studentName}
-                    onChange={handleChange}
-                    className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"
-                    required
-                  />
-                </div>
-                <div className="col-span-1">
-                  <label htmlFor="parentName" className="block text-sm font-medium text-gray-700 mb-1">Parent/Guardian Name:</label>
-                  <input
-                    type="text"
-                    id="parentName"
-                    name="parentName"
-                    value={formData.parentName}
-                    onChange={handleChange}
-                    className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"
-                    required
-                  />
-                </div>
-                <div className="col-span-full">
-                  <label htmlFor="address" className="block text-sm font-medium text-gray-700 mb-1">Address:</label>
-                  <input
-                    type="text"
-                    id="address"
-                    name="address"
-                    value={formData.address}
-                    onChange={handleChange}
-                    className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"
-                    required
-                  />
-                </div>
-                <div className="col-span-full">
-                  <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 mb-1">Phone Number:</label>
-                  <input
-                    type="tel"
-                    id="phoneNumber"
-                    name="phoneNumber"
-                    value={formData.phoneNumber}
-                    onChange={handleChange}
-                    className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"
-                    required
-                  />
-                </div>
-              </div>
-            </section>
+  /**
+   * The admin panel for viewing and managing submitted agreements.
+   */
+  const AdminPanel = () => {
+    const agreementsWithoutInstruments = agreements.filter(a => !a.instrument);
+    const completedAgreements = agreements.filter(a => a.instrument);
 
-            <section className="bg-gray-50 p-5 rounded-xl border border-gray-100 shadow-sm">
-              <h2 className="text-2xl font-bold text-gray-800 mb-4 border-b pb-2 border-gray-200">Instrument Details</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="col-span-1">
-                  <label htmlFor="instrument" className="block text-sm font-medium text-gray-700 mb-1">Instrument:</label>
-                  <input
-                    type="text"
-                    id="instrument"
-                    name="instrument"
-                    value={formData.instrument}
-                    onChange={handleChange}
-                    className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"
-                    required
-                  />
-                </div>
-                <div className="col-span-1">
-                  <label htmlFor="accessories" className="block text-sm font-medium text-gray-700 mb-1">Accessories (if any):</label>
-                  <input
-                    type="text"
-                    id="accessories"
-                    name="accessories"
-                    value={formData.accessories}
-                    onChange={handleChange}
-                    className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"
-                  />
-                </div>
-                <div className="col-span-full">
-                  <label htmlFor="brandSerial" className="block text-sm font-medium text-gray-700 mb-1">Brand and Serial Number:</label>
-                  <input
-                    type="text"
-                    id="brandSerial"
-                    name="brandSerial"
-                    value={formData.brandSerial}
-                    onChange={handleChange}
-                    className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"
-                    required
-                  />
-                </div>
-                <div className="col-span-full">
-                  <label htmlFor="instrumentCondition" className="block text-sm font-medium text-gray-700 mb-1">
-                    Please describe the condition of the instrument and any defects:
-                  </label>
-                  <textarea
-                    id="instrumentCondition"
-                    name="instrumentCondition"
-                    rows="4"
-                    value={formData.instrumentCondition}
-                    onChange={handleChange}
-                    className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"
-                    required
-                  ></textarea>
-                </div>
-              </div>
-            </section>
+    return (
+      <div className="mt-8">
+        <h3 className="text-2xl font-bold text-gray-800 mb-4 text-center">Admin Panel</h3>
+        <p className="text-center text-gray-600 mb-6">
+          Click on a pending form to assign an instrument.
+        </p>
 
-            <section className="bg-blue-50 p-5 rounded-xl border border-blue-100 shadow-sm">
-              <h2 className="text-2xl font-bold text-blue-700 mb-4 border-b pb-2 border-blue-200">Agreement Terms</h2>
-              <ul className="list-disc pl-5 space-y-2 text-gray-700">
-                <li>The student will practice according to the instruction of the music teacher.</li>
-                <li>The parent/guardian and student will be personally responsible for any damage to this instrument while in the student’s care.</li>
-                <li>The parent/guardian and student will return this instrument upon the request of the music teacher. The instrument will be returned in as good condition as it was received, with ordinary wear and depreciation expected.</li>
-              </ul>
-              <p className="mt-5 text-lg font-semibold text-gray-800">
-                By providing your digital signature below, you confirm that you have read, understood, and agree to all the terms and conditions stated above.
-              </p>
-            </section>
-
-            <section className="bg-gray-50 p-5 rounded-xl border border-gray-100 shadow-sm">
-              <h2 className="text-2xl font-bold text-gray-800 mb-4 border-b pb-2 border-gray-200">Digital Signatures</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="col-span-1">
-                  <label htmlFor="parentSignature" className="block text-sm font-medium text-gray-700 mb-1">Parent/Guardian Digital Signature (Type Full Name):</label>
-                  <input
-                    type="text"
-                    id="parentSignature"
-                    name="parentSignature"
-                    value={formData.parentSignature}
-                    onChange={handleChange}
-                    className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"
-                    placeholder="e.g., Jane Doe"
-                    required
-                  />
-                </div>
-                <div className="col-span-1">
-                  <label htmlFor="studentSignature" className="block text-sm font-medium text-gray-700 mb-1">Student Digital Signature (Type Full Name):</label>
-                  <input
-                    type="text"
-                    id="studentSignature"
-                    name="studentSignature"
-                    value={formData.studentSignature}
-                    onChange={handleChange}
-                    className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"
-                    placeholder="e.g., John Doe"
-                    required
-                  />
-                </div>
-              </div>
-            </section>
-
-            <div className="flex justify-center mt-8">
-              <button
-                type="submit"
-                className="px-8 py-4 bg-blue-600 text-white font-bold text-lg rounded-xl shadow-lg hover:bg-blue-700 transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300"
-              >
-                Submit Rental Agreement
-              </button>
+        {selectedAgreement ? (
+          <div className="p-6 bg-gray-100 rounded-xl shadow-inner">
+            <h4 className="text-xl font-semibold mb-4">Assign Instrument for {selectedAgreement.studentName}</h4>
+            <div className="space-y-4">
+              <div><p><strong>Student:</strong> {selectedAgreement.studentName}</p></div>
+              <div><p><strong>Parent:</strong> {selectedAgreement.parentName}</p></div>
             </div>
-          </form>
+            
+            <form onSubmit={handleAdminFormSubmit} className="space-y-4 mt-6">
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1" htmlFor="assignedInstrument">Instrument Type</label>
+                <input id="assignedInstrument" type="text" value={assignedInstrument} onChange={(e) => setAssignedInstrument(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg" required />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1" htmlFor="assignedBrand">Brand and Serial #</label>
+                <input id="assignedBrand" type="text" value={assignedBrand} onChange={(e) => setAssignedBrand(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg" required />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1" htmlFor="assignedDefects">Conditions/Defects</label>
+                <textarea id="assignedDefects" value={assignedDefects} onChange={(e) => setAssignedDefects(e.target.value)} rows="3" className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+              </div>
+              <div className="flex justify-end space-x-2 mt-4">
+                <button type="button" onClick={() => setSelectedAgreement(null)} className="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg">Save & Assign</button>
+              </div>
+            </form>
+          </div>
+        ) : (
+          <>
+            <h4 className="text-xl font-bold text-gray-800 mt-8 mb-4">Pending Agreements</h4>
+            {agreementsWithoutInstruments.length > 0 ? (
+              <ul className="space-y-4">
+                {agreementsWithoutInstruments.map((agreement) => (
+                  <li key={agreement.id} onClick={() => setSelectedAgreement(agreement)} className="bg-gray-50 p-6 rounded-xl shadow-sm cursor-pointer hover:bg-gray-100">
+                    <p className="font-bold">{agreement.studentName}</p>
+                    <p>Parent: {agreement.parentName}</p>
+                    {agreement.timestamp && <p className="text-sm text-gray-400 mt-2">Submitted: {new Date(agreement.timestamp.toDate()).toLocaleString()}</p>}
+                  </li>
+                ))}
+              </ul>
+            ) : (<p className="text-center text-gray-500">No pending agreements.</p>)}
+
+            <h4 className="text-xl font-bold text-gray-800 mt-8 mb-4">Completed Agreements</h4>
+            {completedAgreements.length > 0 ? (
+              <ul className="space-y-4">
+                {completedAgreements.map((agreement) => (
+                  <li key={agreement.id} className="bg-gray-50 p-6 rounded-xl shadow-sm">
+                    <p className="font-bold">{agreement.studentName}</p>
+                    <p>Instrument: {agreement.instrument}</p>
+                    <p>Serial #: {agreement.brand}</p>
+                    <p>Parent: {agreement.parentName}</p>
+                    {agreement.timestamp && <p className="text-sm text-gray-400 mt-2">Submitted: {new Date(agreement.timestamp.toDate()).toLocaleString()}</p>}
+                  </li>
+                ))}
+              </ul>
+            ) : (<p className="text-center text-gray-500">No completed agreements.</p>)}
+          </>
         )}
       </div>
+    );
+  };
+  
+  if (!isAuthReady) {
+    return <div className="text-center p-10">Loading and authenticating...</div>;
+  }
+  
+  // Render the Admin Panel if the user is an admin
+  if (isAdmin) {
+    return (
+      <div className="container mx-auto p-4">
+        <AdminPanel />
+      </div>
+    );
+  }
+
+  // Otherwise, render the student/parent form
+  return (
+    <div className="container mx-auto p-4 max-w-2xl">
+      <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6" role="alert">
+        <p className="font-bold">Important Notice</p>
+        <p>Instruments will be distributed once $50 has been turned into the office and the form has been signed.</p>
+      </div>
+
+      <h1 className="text-3xl font-bold text-center mb-6">Digital Instrument Rental Agreement</h1>
+
+      {isSubmitted ? (
+        <div className="text-center p-8 bg-green-100 rounded-lg">
+          <h2 className="text-2xl font-semibold text-green-800">Thank You!</h2>
+          <p className="mt-2 text-gray-700">Your form has been submitted successfully.</p>
+          <button onClick={handleNewForm} className="mt-6 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            Submit Another Form
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={handleStudentFormSubmit} className="space-y-6">
+          {/* Form fields */}
+          <div>
+            <label htmlFor="studentName" className="block text-sm font-medium text-gray-700">Student Name</label>
+            <input type="text" id="studentName" value={studentName} onChange={(e) => setStudentName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>
+            {errors.studentName && <p className="text-red-500 text-xs mt-1">{errors.studentName}</p>}
+          </div>
+          <div>
+            <label htmlFor="parentName" className="block text-sm font-medium text-gray-700">Parent/Guardian Name</label>
+            <input type="text" id="parentName" value={parentName} onChange={(e) => setParentName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>
+            {errors.parentName && <p className="text-red-500 text-xs mt-1">{errors.parentName}</p>}
+          </div>
+          <div>
+            <label htmlFor="address" className="block text-sm font-medium text-gray-700">Address</label>
+            <input type="text" id="address" value={address} onChange={(e) => setAddress(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>
+            {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address}</p>}
+          </div>
+          <div>
+            <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700">Phone Number</label>
+            <input type="tel" id="phoneNumber" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>
+            {errors.phoneNumber && <p className="text-red-500 text-xs mt-1">{errors.phoneNumber}</p>}
+          </div>
+          
+          {/* Signature Areas */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Parent/Guardian Signature</label>
+              <button type="button" onClick={() => openSignaturePad('parent')} className="mt-1 w-full py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                {parentSignature ? "Signature Saved" : "Click to Sign"}
+              </button>
+              {errors.parentSignature && <p className="text-red-500 text-xs mt-1">{errors.parentSignature}</p>}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Student Signature</label>
+              <button type="button" onClick={() => openSignaturePad('student')} className="mt-1 w-full py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                {studentSignature ? "Signature Saved" : "Click to Sign"}
+              </button>
+              {errors.studentSignature && <p className="text-red-500 text-xs mt-1">{errors.studentSignature}</p>}
+            </div>
+          </div>
+          
+          <button type="submit" className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+            Submit Agreement
+          </button>
+        </form>
+      )}
+
+      <SignaturePadModal
+        signer="parent"
+        isOpen={isParentSigning}
+        onClose={() => setIsParentSigning(false)}
+        onSave={saveSignature}
+        sigPadRef={parentSigPad}
+      />
+      <SignaturePadModal
+        signer="student"
+        isOpen={isStudentSigning}
+        onClose={() => setIsStudentSigning(false)}
+        onSave={saveSignature}
+        sigPadRef={studentSigPad}
+      />
     </div>
   );
-};
+}
 
 export default App;
