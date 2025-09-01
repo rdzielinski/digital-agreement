@@ -2,7 +2,7 @@
   "name": "digital-agreement",
   "version": "0.1.0",
   "private": true,
-  "homepage": ".",
+  "homepage": "https://rdzielinski.github.io/digital-agreement",
   "dependencies": {
     "firebase": "^12.1.0",
     "react": "^18.2.0",
