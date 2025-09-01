@@ -5,15 +5,14 @@ import { getFirestore, collection, addDoc, onSnapshot, query, doc, updateDoc, se
 import SignatureCanvas from 'react-signature-canvas';
 
 // --- Firebase Project Configuration ---
-// It's recommended to store these in environment variables for production
 const firebaseConfig = {
-  apiKey: "AIzaSyCvqrLvTnFb_rCeuAMGUpd55CJ8_qwTBVg",
-  authDomain: "digital-form-e13d7.firebaseapp.com",
-  projectId: "digital-form-e13d7",
-  storageBucket: "digital-form-e13d7.firebasestorage.app",
-  messagingSenderId: "787464716516",
-  appId: "1:787464716516:web:7450b9c33204e69ea22cf1",
-  measurementId: "G-HE3VF8RKD9"
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID,
+  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID
 };
 
 // --- Admin User ID ---
