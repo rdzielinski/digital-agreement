@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
@@ -176,46 +176,35 @@ function App() {
   };
 
   const SignaturePadModal = ({ signer, isOpen, onClose, onSave, sigPadRef }) => {
-    const containerRef = useRef(null);
-    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-
-    useLayoutEffect(() => {
-      const updateDimensions = () => {
-        if (isOpen && containerRef.current) {
-          setDimensions({
-            width: containerRef.current.clientWidth,
-            height: containerRef.current.clientHeight,
-          });
-        }
-      };
-      updateDimensions();
-      window.addEventListener('resize', updateDimensions);
-      return () => window.removeEventListener('resize', updateDimensions);
-    }, [isOpen]);
-
     if (!isOpen) return null;
 
     const handleClear = () => {
-      if (sigPadRef.current) sigPadRef.current.clear();
+      if (sigPadRef.current) {
+        sigPadRef.current.clear();
+      }
     };
 
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
-        <div className="bg-white p-4 sm:p-6 rounded-lg shadow-xl w-full max-w-xs sm:max-w-sm">
+        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
           <h2 className="text-xl font-bold mb-4">Sign as {signer === 'parent' ? 'Parent/Guardian' : 'Student'}</h2>
-          <div ref={containerRef} className="h-40 border-2 border-dashed border-gray-400 rounded-lg">
-            {dimensions.width > 0 && (
-              <SignatureCanvas
-                ref={sigPadRef}
-                penColor="black"
-                canvasProps={{ width: dimensions.width, height: dimensions.height, className: 'sigCanvas' }}
-              />
-            )}
+          <div className="border-2 border-dashed border-gray-400 rounded-lg">
+            <SignatureCanvas
+              ref={sigPadRef}
+              penColor="black"
+              canvasProps={{ className: 'w-full h-40' }}
+            />
           </div>
-          <div className="flex justify-end space-x-2 mt-4 text-sm">
-            <button onClick={handleClear} className="px-3 py-2 sm:px-4 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors">Clear</button>
-            <button onClick={onClose} className="px-3 py-2 sm:px-4 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors">Cancel</button>
-            <button onClick={() => onSave(signer)} className="px-3 py-2 sm:px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">Save</button>
+          <div className="flex justify-end space-x-2 mt-4">
+            <button onClick={handleClear} className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors">
+              Clear
+            </button>
+            <button onClick={onClose} className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors">
+              Cancel
+            </button>
+            <button onClick={() => onSave(signer)} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+              Save Signature
+            </button>
           </div>
         </div>
       </div>
