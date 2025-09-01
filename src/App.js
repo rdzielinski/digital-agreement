@@ -34,6 +34,7 @@ function App() {
   const [studentSignature, setStudentSignature] = useState(null);
   const [isParentSigning, setIsParentSigning] = useState(false);
   const [isStudentSigning, setIsStudentSigning] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false); // New state for the checkbox
   const [errors, setErrors] = useState({});
 
   // Admin state
@@ -111,6 +112,7 @@ function App() {
     if (!phoneNumber) newErrors.phoneNumber = 'Phone Number is required.';
     if (!parentSignature) newErrors.parentSignature = 'Parent/Guardian signature is required.';
     if (!studentSignature) newErrors.studentSignature = 'Student signature is required.';
+    if (!agreedToTerms) newErrors.terms = 'You must agree to the terms and policies.'; // New validation check
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -154,6 +156,7 @@ function App() {
   const handleNewForm = () => {
     setStudentName(''); setParentName(''); setAddress(''); setPhoneNumber('');
     setParentSignature(null); setStudentSignature(null);
+    setAgreedToTerms(false); // Reset the checkbox state
     setIsSubmitted(false);
   };
   
@@ -345,6 +348,27 @@ function App() {
               {errors.studentSignature && <p className="text-red-500 text-xs mt-1">{errors.studentSignature}</p>}
             </div>
           </div>
+          
+          {/* New Terms and Conditions Checkbox */}
+          <div className="relative flex items-start">
+            <div className="flex h-5 items-center">
+              <input
+                id="terms"
+                aria-describedby="terms-description"
+                name="terms"
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="ml-3 text-sm">
+              <label htmlFor="terms" className="font-medium text-gray-700">
+                By checking this box, I acknowledge that I have read and agree to follow all Waterloo School Board policies and guidelines. I also understand that any damages caused to the instrument during the rental period (September to June) will be my financial responsibility.
+              </label>
+            </div>
+          </div>
+          {errors.terms && <p className="text-red-500 text-xs mt-1">{errors.terms}</p>}
           
           <button type="submit" className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
             Submit Agreement
