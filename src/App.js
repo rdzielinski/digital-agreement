@@ -17,9 +17,8 @@ const firebaseConfig = {
 
 // --- Admin User ID ---
 // !!! SECURITY WARNING !!!
-// Hardcoding the Admin UID here is NOT secure for a production application.
-// Anyone can view this in the browser's source code.
-// For production, use Firebase Custom Claims or a secure backend check to determine admin status.
+// This is still not a secure way to handle admin access for a production app.
+// Please consider using Firebase Custom Claims in the future.
 const ADMIN_UID = 'Lmnop123!@12'; // Replace with your actual admin user ID
 
 const __initial_auth_token = typeof window !== 'undefined' && window.__initial_auth_token || null;
@@ -29,7 +28,7 @@ const __initial_auth_token = typeof window !== 'undefined' && window.__initial_a
  * Manages form state, handles submission, and provides an admin interface.
  */
 function App() {
-  // Form state for students/parents
+  // Form state
   const [studentName, setStudentName] = useState('');
   const [parentName, setParentName] = useState('');
   const [address, setAddress] = useState('');
@@ -41,14 +40,14 @@ function App() {
   const [isStudentSigning, setIsStudentSigning] = useState(false);
   const [errors, setErrors] = useState({});
 
-  // State for admin view
+  // Admin state
   const [agreements, setAgreements] = useState([]);
   const [selectedAgreement, setSelectedAgreement] = useState(null);
   const [assignedInstrument, setAssignedInstrument] = useState('');
   const [assignedBrand, setAssignedBrand] = useState('');
   const [assignedDefects, setAssignedDefects] = useState('');
 
-  // State for Firebase and user session
+  // Firebase state
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [userId, setUserId] = useState(null);
   const db = useRef(null);
@@ -56,15 +55,15 @@ function App() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   // Refs for signature pads
-  const parentSigPad = useRef({});
-  const studentSigPad = useRef({});
+  const parentSigPad = useRef(null);
+  const studentSigPad = useRef(null);
 
   /**
    * Initializes Firebase and sets up authentication.
    */
   useEffect(() => {
     try {
-      if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+      if (process.env.REACT_APP_FIREBASE_API_KEY) {
         const app = initializeApp(firebaseConfig);
         db.current = getFirestore(app);
         auth.current = getAuth(app);
@@ -77,7 +76,6 @@ function App() {
           }
           const currentUserId = auth.current.currentUser?.uid;
           setUserId(currentUserId);
-          // Check if the current user is the admin
           if (currentUserId === ADMIN_UID) {
             setIsAdmin(true);
           }
@@ -85,7 +83,7 @@ function App() {
         };
         signIn();
       } else {
-        console.error('Firebase configuration is missing.');
+        console.error('Firebase configuration is missing. Make sure your .env.local file is set up correctly.');
       }
     } catch (error) {
       console.error('Failed to initialize Firebase:', error);
@@ -102,7 +100,6 @@ function App() {
     }
 
     try {
-      // Admin listens to the top-level 'agreements' collection for all submissions
       const agreementsRef = collection(db.current, 'agreements');
       const q = query(agreementsRef);
 
@@ -121,7 +118,6 @@ function App() {
 
   /**
    * Handles form submission for the student/parent view.
-   * Saves to a central Firestore collection.
    */
   const handleStudentFormSubmit = async (e) => {
     e.preventDefault();
@@ -141,7 +137,6 @@ function App() {
 
     if (db.current) {
       try {
-        // CORRECTED: Write to a single, top-level 'agreements' collection
         const agreementsRef = collection(db.current, 'agreements');
         await addDoc(agreementsRef, {
           studentName,
@@ -154,7 +149,7 @@ function App() {
           instrument: null,
           brand: null,
           defects: null,
-          submittedBy: userId, // Keep track of who submitted it
+          submittedBy: userId,
           timestamp: serverTimestamp()
         });
         console.log('Document successfully written to Firestore!');
@@ -166,13 +161,12 @@ function App() {
   };
 
   /**
-   * Handles form submission for the admin view to update an agreement.
+   * Handles form submission for the admin view.
    */
   const handleAdminFormSubmit = async (e) => {
     e.preventDefault();
     if (selectedAgreement && db.current) {
       try {
-        // CORRECTED: Update the document in the top-level 'agreements' collection
         const agreementRef = doc(db.current, 'agreements', selectedAgreement.id);
         await updateDoc(agreementRef, {
           instrument: assignedInstrument,
@@ -190,7 +184,6 @@ function App() {
     }
   };
   
-  // Resets the student form
   const handleNewForm = () => {
     setStudentName('');
     setParentName('');
@@ -201,19 +194,22 @@ function App() {
     setIsSubmitted(false);
   };
   
-  // Opens the signature modal
   const openSignaturePad = (signer) => {
     if (signer === 'parent') setIsParentSigning(true);
     else setIsStudentSigning(true);
   };
   
-  // Saves the signature data
   const saveSignature = (signer) => {
+    const sigPad = signer === 'parent' ? parentSigPad.current : studentSigPad.current;
+    if (sigPad.isEmpty()) {
+      return; // Or show an error message
+    }
+    const signatureData = sigPad.getTrimmedCanvas().toDataURL('image/png');
     if (signer === 'parent') {
-      setParentSignature(parentSigPad.current.getTrimmedCanvas().toDataURL('image/png'));
+      setParentSignature(signatureData);
       setIsParentSigning(false);
     } else {
-      setStudentSignature(studentSigPad.current.getTrimmedCanvas().toDataURL('image/png'));
+      setStudentSignature(signatureData);
       setIsStudentSigning(false);
     }
   };
@@ -223,6 +219,13 @@ function App() {
    */
   const SignaturePadModal = ({ signer, isOpen, onClose, onSave, sigPadRef }) => {
     if (!isOpen) return null;
+
+    const handleClear = () => {
+      if (sigPadRef.current) {
+        sigPadRef.current.clear();
+      }
+    };
+
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
         <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
@@ -235,7 +238,7 @@ function App() {
             />
           </div>
           <div className="flex justify-end space-x-2 mt-4">
-            <button onClick={() => {if(signer === 'parent') {parentSigPad.current.clear()} else {studentSigPad.current.clear()}}} className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors">
+            <button onClick={handleClear} className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors">
               Clear
             </button>
             <button onClick={onClose} className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors">
@@ -330,7 +333,6 @@ function App() {
     return <div className="text-center p-10">Loading and authenticating...</div>;
   }
   
-  // Render the Admin Panel if the user is an admin
   if (isAdmin) {
     return (
       <div className="container mx-auto p-4">
@@ -339,7 +341,6 @@ function App() {
     );
   }
 
-  // Otherwise, render the student/parent form
   return (
     <div className="container mx-auto p-4 max-w-2xl">
       <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6" role="alert">
@@ -359,7 +360,6 @@ function App() {
         </div>
       ) : (
         <form onSubmit={handleStudentFormSubmit} className="space-y-6">
-          {/* Form fields */}
           <div>
             <label htmlFor="studentName" className="block text-sm font-medium text-gray-700">Student Name</label>
             <input type="text" id="studentName" value={studentName} onChange={(e) => setStudentName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"/>
@@ -381,7 +381,6 @@ function App() {
             {errors.phoneNumber && <p className="text-red-500 text-xs mt-1">{errors.phoneNumber}</p>}
           </div>
           
-          {/* Signature Areas */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700">Parent/Guardian Signature</label>
