@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - run: npm install && npm run build
+      - run: npm ci && npm run build
         # This is the crucial new part that adds your secrets to the build process
         env:
           REACT_APP_FIREBASE_API_KEY: ${{ secrets.REACT_APP_FIREBASE_API_KEY }}
